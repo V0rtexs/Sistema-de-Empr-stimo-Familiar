@@ -1,0 +1,209 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace SistemaEmprestimoFamiliar
+{
+    // Sistema para controle de empréstimos entre familiares com juros e multas automáticas.
+    public class Usuario
+    {
+        public string Nome { get; }
+        public string Senha { get; set; }
+        public bool IsAdmin { get; set; }
+
+        public Usuario(string nome, string senha, bool isAdmin = false)
+        {
+            Nome = nome;
+            Senha = senha;
+            IsAdmin = isAdmin;
+        }
+    }
+
+    public class Emprestimo
+    {
+        public DateTime Data { get; }
+        public Usuario Credor { get; }
+        public Usuario Devedor { get; }
+        public double Valor { get; }
+
+        public Emprestimo(Usuario credor, Usuario devedor, double valor)
+        {
+            Data = DateTime.Now;
+            Credor = credor;
+            Devedor = devedor;
+            Valor = valor;
+        }
+    }
+
+    class Program
+    {
+        static List<Usuario> usuarios = new List<Usuario>();
+        static List<Emprestimo> emprestimos = new List<Emprestimo>();
+
+        static double TaxaJurosDiaria = 0.001;
+        static double TaxaMulta = 0.10;
+
+        static void Main(string[] args)
+        {
+            // O sistema possui um administrador padrão para gerenciar taxas
+            usuarios.Add(new Usuario("Admin", "1234", true));
+            ExibirMenu();
+        }
+
+        static List<Emprestimo> ObtemListaDeEmprestimo(string nomeCredor, string nomeDevedor)
+        {
+            // Retorna os empréstimos que contém relação entre os nomes dos credores e devedores
+            return emprestimos.Where(e =>
+                (string.IsNullOrWhiteSpace(nomeCredor) || e.Credor.Nome.Equals(nomeCredor, StringComparison.OrdinalIgnoreCase)) &&
+                (string.IsNullOrWhiteSpace(nomeDevedor) || e.Devedor.Nome.Equals(nomeDevedor, StringComparison.OrdinalIgnoreCase))
+            ).ToList();
+        }
+
+        static double ObtemValorReajustado(Emprestimo e)
+        {
+            // Consulta o preço original e calcula o reajuste de acordo com os juros e multa
+            int dias = (DateTime.Now - e.Data).Days;
+
+            // Juros compostos de 0,1% ao dia
+            double valorComJuros = e.Valor * Math.Pow(1 + TaxaJurosDiaria, dias);
+
+            // Aplicação de multa de 10% a cada 30 dias sobre o valor atualizado
+            int periodosMulta = dias / 30;
+            double valorFinal = valorComJuros * Math.Pow(1 + TaxaMulta, periodosMulta);
+
+            return valorFinal;
+        }
+
+        static void ConfirmaOPagamento(Emprestimo EmprestimoSelecionado, string SenhaCredor)
+        {
+            // O Credor insere sua senha e confirma o pagamento do empréstimo selecionado
+            if (EmprestimoSelecionado.Credor.Senha == SenhaCredor)
+            {
+                // Após o pagamento o empréstimo pago deve ser excluído da lista de dividas
+                emprestimos.Remove(EmprestimoSelecionado);
+                Console.WriteLine("\nPagamento confirmado. Dívida removida com sucesso.");
+            }
+            else
+            {
+                Console.WriteLine("\nSenha do credor inválida. Operação cancelada.");
+            }
+        }
+
+        static void ExibirMenu()
+        {
+            while (true)
+            {
+                Console.WriteLine("\n--- SISTEMA DE EMPRÉSTIMOS FAMILIARES ---");
+                Console.WriteLine("1. Cadastro de Usuário");
+                Console.WriteLine("2. Registrar Novo Empréstimo");
+                Console.WriteLine("3. Relatório de Dívidas / Quitar");
+                Console.WriteLine("4. Configurações (Admin)");
+                Console.WriteLine("5. Sair");
+                Console.Write("Opção: ");
+
+                string opcao = Console.ReadLine();
+
+                if (opcao == "1") CadastrarUsuario();
+                else if (opcao == "2") RegistrarEmprestimo();
+                else if (opcao == "3") RelatorioDividas();
+                else if (opcao == "4") PainelAdmin();
+                else if (opcao == "5") break;
+            }
+        }
+
+        static void CadastrarUsuario()
+        {
+            Console.Write("\nNome do familiar: ");
+            string nome = Console.ReadLine();
+            Console.Write("Defina uma senha (assinatura): ");
+            string senha = Console.ReadLine();
+
+            if (!string.IsNullOrWhiteSpace(nome))
+            {
+                usuarios.Add(new Usuario(nome, senha));
+                Console.WriteLine("Usuário cadastrado!");
+            }
+        }
+
+        static void RegistrarEmprestimo()
+        {
+            Console.Write("\nNome do Credor (quem empresta): ");
+            string nomeCredor = Console.ReadLine();
+            var credor = usuarios.Find(u => u.Nome.Equals(nomeCredor, StringComparison.OrdinalIgnoreCase));
+
+            Console.Write("Nome do Devedor (quem recebe): ");
+            string nomeDevedor = Console.ReadLine();
+            var devedor = usuarios.Find(u => u.Nome.Equals(nomeDevedor, StringComparison.OrdinalIgnoreCase));
+
+            if (credor == null || devedor == null)
+            {
+                Console.WriteLine("Erro: Credor ou Devedor não encontrado no cadastro.");
+                return;
+            }
+
+            Console.Write("Valor do empréstimo: R$ ");
+            if (double.TryParse(Console.ReadLine(), out double valor))
+            {
+                Console.Write($"Devedor ({devedor.Nome}), digite sua senha para assinar: ");
+                if (devedor.Senha == Console.ReadLine())
+                {
+                    emprestimos.Add(new Emprestimo(credor, devedor, valor));
+                    Console.WriteLine("Empréstimo registrado com sucesso.");
+                }
+                else Console.WriteLine("Senha incorreta. O empréstimo não foi assinado.");
+            }
+        }
+
+        static void RelatorioDividas()
+        {
+            Console.WriteLine("\n--- FILTROS DE RELATÓRIO (Deixe vazio para ver tudo) ---");
+            Console.Write("Filtrar por Credor: ");
+            string c = Console.ReadLine();
+            Console.Write("Filtrar por Devedor: ");
+            string d = Console.ReadLine();
+
+            var lista = ObtemListaDeEmprestimo(c, d);
+
+            if (lista.Count == 0)
+            {
+                Console.WriteLine("Nenhum empréstimo pendente encontrado com esses filtros.");
+                return;
+            }
+
+            Console.WriteLine("\nID | CREDOR | DEVEDOR | DATA | VALOR ATUAL");
+            for (int i = 0; i < lista.Count; i++)
+            {
+                double total = ObtemValorReajustado(lista[i]);
+                Console.WriteLine($"{i} | {lista[i].Credor.Nome} | {lista[i].Devedor.Nome} | {lista[i].Data:dd/MM/yyyy} | R${total:F2}");
+            }
+
+            Console.Write("\nDeseja quitar algum empréstimo agora? (S/N): ");
+            if (Console.ReadLine().ToUpper() == "S")
+            {
+                Console.Write("Digite o ID do empréstimo: ");
+                if (int.TryParse(Console.ReadLine(), out int index) && index >= 0 && index < lista.Count)
+                {
+                    Console.Write($"Credor ({lista[index].Credor.Nome}), digite sua senha para confirmar o recebimento: ");
+                    ConfirmaOPagamento(lista[index], Console.ReadLine());
+                }
+                else Console.WriteLine("ID inválido.");
+            }
+        }
+
+        static void PainelAdmin()
+        {
+            Console.Write("\nSenha de Administrador: ");
+            var admin = usuarios.Find(u => u.IsAdmin && u.Senha == Console.ReadLine());
+            if (admin != null)
+            {
+                Console.WriteLine($"Taxas atuais: Juros {TaxaJurosDiaria * 100}%/dia | Multa {TaxaMulta * 100}%");
+                Console.Write("Nova taxa de juros diária (ex: 0,001 para 0.1%): ");
+                TaxaJurosDiaria = double.Parse(Console.ReadLine());
+                Console.Write("Nova taxa de multa (ex: 0,10 para 10%): ");
+                TaxaMulta = double.Parse(Console.ReadLine());
+                Console.WriteLine("Taxas atualizadas com sucesso.");
+            }
+            else Console.WriteLine("Acesso negado.");
+        }
+    }
+}
